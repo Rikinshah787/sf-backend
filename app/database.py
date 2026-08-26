@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -45,11 +45,38 @@ def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
     cursor.close()
 
 
+def _migrate_legacy_addresses() -> None:
+    """
+    One-shot, idempotent upgrade for persistent databases created before the
+    addresses table existed: copy each contact's flat postal columns into a
+    single 'home' Address row, then drop the legacy columns.
+    """
+    columns = {column["name"] for column in inspect(engine).get_columns("contacts")}
+    legacy = ("address", "city", "state", "postal_code", "country")
+    if not set(legacy) <= columns:
+        return  # already migrated (or a fresh database)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO addresses"
+                " (contact_id, type, address, city, state, postal_code, country)"
+                " SELECT id, 'home', address, city, state, postal_code, country"
+                " FROM contacts"
+                " WHERE COALESCE(address, city, state, postal_code, country) IS NOT NULL"
+                "   AND id NOT IN (SELECT contact_id FROM addresses)"
+            )
+        )
+        for column in legacy:
+            conn.execute(text(f"ALTER TABLE contacts DROP COLUMN {column}"))
+
+
 def init_db() -> None:
     """Create tables. Called on startup; safe to call repeatedly."""
     from app import models  # noqa: F401  (register models on Base.metadata)
 
     Base.metadata.create_all(bind=engine)
+    _migrate_legacy_addresses()
 
 
 def get_db() -> Generator[Session, None, None]:

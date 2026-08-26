@@ -67,3 +67,56 @@ def test_deleting_a_contact_deletes_its_addresses(client, payload):
 
     with SessionLocal() as db:
         assert db.query(Address).filter_by(contact_id=contact_id).count() == 0
+
+
+def test_legacy_flat_address_columns_are_migrated(client):
+    """A database from before this change is backfilled into the addresses table."""
+    from sqlalchemy import inspect, text
+
+    from app.database import Base, SessionLocal, engine, init_db
+    from app.models import Contact
+
+    # Recreate the pre-migration schema: flat postal columns, no addresses table.
+    Base.metadata.drop_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE contacts ("
+                " id INTEGER PRIMARY KEY,"
+                " first_name VARCHAR(100) NOT NULL, last_name VARCHAR(100) NOT NULL,"
+                " email VARCHAR(320) NOT NULL UNIQUE, phone VARCHAR(40),"
+                " company VARCHAR(200), job_title VARCHAR(200),"
+                " address VARCHAR(300), city VARCHAR(120), state VARCHAR(120),"
+                " postal_code VARCHAR(20), country VARCHAR(120), notes TEXT,"
+                " created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                " updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO contacts (id, first_name, last_name, email, address, city, country)"
+                " VALUES (1, 'Ada', 'Lovelace', 'ada@example.com', '1 Market St', 'San Francisco', 'USA')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO contacts (id, first_name, last_name, email)"
+                " VALUES (2, 'Grace', 'Hopper', 'grace@example.com')"
+            )
+        )
+
+    init_db()  # creates the addresses table, backfills, drops the legacy columns
+
+    with SessionLocal() as db:
+        migrated = db.get(Contact, 1)
+        assert [(a.type, a.address, a.city) for a in migrated.addresses] == [
+            ("home", "1 Market St", "San Francisco")
+        ]
+        assert db.get(Contact, 2).addresses == []
+
+    remaining = {column["name"] for column in inspect(engine).get_columns("contacts")}
+    assert not remaining & {"address", "city", "state", "postal_code", "country"}
+
+    init_db()  # idempotent: running the migration again must not duplicate rows
+    with SessionLocal() as db:
+        assert len(db.get(Contact, 1).addresses) == 1
