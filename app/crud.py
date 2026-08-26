@@ -1,7 +1,7 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Contact
+from app.models import Address, Contact
 from app.schemas import ContactCreate, ContactReplace, ContactUpdate
 
 SORTABLE_FIELDS = ("id", "first_name", "last_name", "email", "company", "created_at", "updated_at")
@@ -9,6 +9,16 @@ SORTABLE_FIELDS = ("id", "first_name", "last_name", "email", "company", "created
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def _prepare(field: str, value):
+    """Coerce one validated payload field into its ORM form."""
+    if field == "email":
+        return _normalize_email(value)
+    if field == "addresses":
+        # Full replacement: the delete-orphan cascade drops the old rows.
+        return [Address(**row) for row in value]
+    return value
 
 
 def get_contact(db: Session, contact_id: int) -> Contact | None:
@@ -60,8 +70,7 @@ def list_contacts(
 
 
 def create_contact(db: Session, payload: ContactCreate) -> Contact:
-    data = payload.model_dump()
-    data["email"] = _normalize_email(data["email"])
+    data = {field: _prepare(field, value) for field, value in payload.model_dump().items()}
     contact = Contact(**data)
     db.add(contact)
     db.commit()
@@ -71,15 +80,20 @@ def create_contact(db: Session, payload: ContactCreate) -> Contact:
 
 def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> Contact:
     for field, value in payload.model_dump().items():
-        setattr(contact, field, _normalize_email(value) if field == "email" else value)
+        setattr(contact, field, _prepare(field, value))
     db.commit()
     db.refresh(contact)
     return contact
 
 
 def update_contact(db: Session, contact: Contact, payload: ContactUpdate) -> Contact:
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(contact, field, _normalize_email(value) if field == "email" else value)
+    # `addresses: None` means "leave untouched" and is excluded by exclude_unset
+    # unless explicitly sent; treat an explicit null the same as omitting it.
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("addresses", ...) is None:
+        data.pop("addresses")
+    for field, value in data.items():
+        setattr(contact, field, _prepare(field, value))
     db.commit()
     db.refresh(contact)
     return contact
