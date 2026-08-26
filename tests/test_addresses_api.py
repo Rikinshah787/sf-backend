@@ -87,7 +87,7 @@ def test_legacy_flat_address_columns_are_migrated(client):
                 " email VARCHAR(320) NOT NULL UNIQUE, phone VARCHAR(40),"
                 " company VARCHAR(200), job_title VARCHAR(200),"
                 " address VARCHAR(300), city VARCHAR(120), state VARCHAR(120),"
-                " postal_code VARCHAR(20), country VARCHAR(120), notes TEXT,"
+                " postal_code VARCHAR(20), country VARCHAR(120), notes TEXT, photo TEXT,"
                 " created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
                 " updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"
             )
