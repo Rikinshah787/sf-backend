@@ -164,6 +164,18 @@ def test_photo_rejects_non_image_data(client, payload):
     assert response.status_code == 422
 
 
+def test_photo_rejects_malformed_data_urls(client, payload):
+    for bad in (
+        "data:image/png,rawbytes",  # missing ;base64,
+        "data:image/png;base64,@@not-base64@@",  # invalid payload characters
+        "data:image/png;base64,iVBORw0KG",  # truncated: bad base64 padding
+        "data:image/svg+xml;base64,PHN2Zy8+",  # scriptable media type
+        "data:image/",  # no media type at all
+    ):
+        response = client.post(BASE, json={**payload, "photo": bad})
+        assert response.status_code == 422, bad
+
+
 def test_patch_can_remove_photo(client, payload):
     contact_id = client.post(BASE, json={**payload, "photo": PHOTO}).json()["id"]
     response = client.patch(f"{BASE}/{contact_id}", json={"photo": None})

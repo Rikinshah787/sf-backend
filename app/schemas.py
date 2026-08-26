@@ -1,3 +1,6 @@
+import base64
+import binascii
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
@@ -6,10 +9,23 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, fie
 # ~1 MiB of image bytes once base64-decoded (base64 inflates by ~4/3).
 PHOTO_MAX_LENGTH = 1_400_000
 
+# Full data-URL shape: an image/* media type (SVG excluded — it is scriptable
+# and unsafe to echo back as an <img> source), ';base64,', then the payload.
+_PHOTO_DATA_URL = re.compile(r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.*)", re.DOTALL)
+
 
 def _validate_photo(value: str | None) -> str | None:
-    if value is not None and not value.startswith("data:image/"):
-        raise ValueError("photo must be a base64 data URL with an image/* media type")
+    if value is None:
+        return value
+    match = _PHOTO_DATA_URL.fullmatch(value)
+    if match is None:
+        raise ValueError(
+            "photo must be a base64 data URL (data:image/<subtype>;base64,…); SVG is not accepted"
+        )
+    try:
+        base64.b64decode(match.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("photo payload is not valid base64") from None
     return value
 
 
