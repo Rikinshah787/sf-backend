@@ -1,6 +1,40 @@
+import base64
+import binascii
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+
+# ~1 MiB of image bytes once base64-decoded (base64 inflates by ~4/3).
+PHOTO_MAX_LENGTH = 1_400_000
+
+# Full data-URL shape: an image/* media type (SVG excluded — it is scriptable
+# and unsafe to echo back as an <img> source), ';base64,', then a non-empty
+# payload (an empty payload is no image at all).
+# IGNORECASE because RFC 6838 media type and subtype names are case-insensitive.
+_PHOTO_DATA_URL = re.compile(
+    r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.+)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _validate_photo(value: str | None) -> str | None:
+    if value is None:
+        return value
+    match = _PHOTO_DATA_URL.fullmatch(value)
+    if match is None:
+        raise ValueError(
+            "photo must be a non-empty base64 data URL (data:image/<subtype>;base64,…);"
+            " SVG is not accepted"
+        )
+    try:
+        decoded = base64.b64decode(match.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("photo payload is not valid base64") from None
+    if not decoded:
+        raise ValueError("photo payload must not be empty")
+    return value
 
 
 class ContactBase(BaseModel):
@@ -69,6 +103,17 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        description=(
+            "Profile photo as a base64 `data:image/...` URL, or `null` for no photo. "
+            f"Limited to {PHOTO_MAX_LENGTH:,} characters (~1 MiB of image data)."
+        ),
+        examples=["data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="],
+    )
+
+    _check_photo = field_validator("photo")(_validate_photo)
 
 
 _FULL_EXAMPLE = {
@@ -134,6 +179,13 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        description="New profile photo as a base64 `data:image/...` URL; `null` removes it.",
+    )
+
+    _check_photo = field_validator("photo")(_validate_photo)
 
 
 class ContactRead(ContactBase):
