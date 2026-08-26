@@ -11,7 +11,11 @@ PHOTO_MAX_LENGTH = 1_400_000
 
 # Full data-URL shape: an image/* media type (SVG excluded — it is scriptable
 # and unsafe to echo back as an <img> source), ';base64,', then the payload.
-_PHOTO_DATA_URL = re.compile(r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.*)", re.DOTALL)
+# IGNORECASE because RFC 6838 media type and subtype names are case-insensitive.
+_PHOTO_DATA_URL = re.compile(
+    r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.*)",
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 def _validate_photo(value: str | None) -> str | None:

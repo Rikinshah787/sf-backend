@@ -170,6 +170,7 @@ def test_photo_rejects_malformed_data_urls(client, payload):
         "data:image/png;base64,@@not-base64@@",  # invalid payload characters
         "data:image/png;base64,iVBORw0KG",  # truncated: bad base64 padding
         "data:image/svg+xml;base64,PHN2Zy8+",  # scriptable media type
+        "data:image/SVG+XML;base64,PHN2Zy8+",  # media types are case-insensitive
         "data:image/",  # no media type at all
     ):
         response = client.post(BASE, json={**payload, "photo": bad})
