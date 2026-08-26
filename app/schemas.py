@@ -3,6 +3,16 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
 
+# ~1 MiB of image bytes once base64-decoded (base64 inflates by ~4/3).
+PHOTO_MAX_LENGTH = 1_400_000
+
+
+def _validate_photo(value: str | None) -> str | None:
+    if value is not None and not value.startswith("data:image/"):
+        raise ValueError("photo must be a base64 data URL with an image/* media type")
+    return value
+
+
 class ContactBase(BaseModel):
     """Fields shared by every contact request and response."""
 
@@ -69,6 +79,17 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        description=(
+            "Profile photo as a base64 `data:image/...` URL, or `null` for no photo. "
+            f"Limited to {PHOTO_MAX_LENGTH:,} characters (~1 MiB of image data)."
+        ),
+        examples=["data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="],
+    )
+
+    _check_photo = field_validator("photo")(_validate_photo)
 
 
 _FULL_EXAMPLE = {
@@ -134,6 +155,13 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    photo: str | None = Field(
+        default=None,
+        max_length=PHOTO_MAX_LENGTH,
+        description="New profile photo as a base64 `data:image/...` URL; `null` removes it.",
+    )
+
+    _check_photo = field_validator("photo")(_validate_photo)
 
 
 class ContactRead(ContactBase):
