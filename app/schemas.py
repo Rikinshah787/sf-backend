@@ -10,10 +10,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, fie
 PHOTO_MAX_LENGTH = 1_400_000
 
 # Full data-URL shape: an image/* media type (SVG excluded — it is scriptable
-# and unsafe to echo back as an <img> source), ';base64,', then the payload.
+# and unsafe to echo back as an <img> source), ';base64,', then a non-empty
+# payload (an empty payload is no image at all).
 # IGNORECASE because RFC 6838 media type and subtype names are case-insensitive.
 _PHOTO_DATA_URL = re.compile(
-    r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.*)",
+    r"data:image/(?!svg\+xml;)[\w.+-]+;base64,(.+)",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -24,12 +25,15 @@ def _validate_photo(value: str | None) -> str | None:
     match = _PHOTO_DATA_URL.fullmatch(value)
     if match is None:
         raise ValueError(
-            "photo must be a base64 data URL (data:image/<subtype>;base64,…); SVG is not accepted"
+            "photo must be a non-empty base64 data URL (data:image/<subtype>;base64,…);"
+            " SVG is not accepted"
         )
     try:
-        base64.b64decode(match.group(1), validate=True)
+        decoded = base64.b64decode(match.group(1), validate=True)
     except (binascii.Error, ValueError):
         raise ValueError("photo payload is not valid base64") from None
+    if not decoded:
+        raise ValueError("photo payload must not be empty")
     return value
 
 
