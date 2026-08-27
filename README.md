@@ -4,6 +4,14 @@ A self-contained Contacts REST API built with **FastAPI** + **SQLAlchemy**, back
 **in-memory SQLite database** by default. No external database, container, or migration
 step is needed — start the process and the API is ready.
 
+The companion UI lives in [`sf-frontend`](https://github.com/Rikinshah787/sf-frontend); it
+talks to this API server-side only, so there is no CORS surface to configure here.
+
+## Requirements
+
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/) (recommended) or plain `pip`
+
 ## Quickstart
 
 ```bash
@@ -107,11 +115,19 @@ also read):
 (case-insensitive). Everything else is optional.
 
 ```
-first_name, last_name, email, phone, company, job_title,
-address, city, state, postal_code, country, notes
+first_name, last_name, email, phone, company, job_title, notes,
+photo, addresses[]
 ```
 
-Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
+- **`photo`** — a base64 `data:image/...` URL (~1 MB decoded cap; SVG is
+  rejected because it is scriptable), or `null` for no photo.
+- **`addresses`** — a one-to-many list, at most 10 per contact. Each entry is
+  typed `home` / `work` / `other` with `address`, `city`, `state`,
+  `postal_code`, `country`. `PUT` replaces the whole list; `PATCH` leaves it
+  untouched unless `addresses` is sent.
+
+Responses add `id`, `full_name`, `created_at`, `updated_at` (UTC), and a
+server-assigned `id` on every address.
 
 ### List query parameters
 
@@ -170,7 +186,7 @@ app/
   main.py             FastAPI app, lifespan startup, /health and /
   config.py           Environment-driven settings
   database.py         Engine, session factory, StaticPool in-memory wiring
-  models.py           Contact ORM model
+  models.py           Contact and Address ORM models
   schemas.py          Pydantic request/response models
   crud.py             Database operations (search, sort, paginate)
   seed.py             Sample contacts for the in-memory default
